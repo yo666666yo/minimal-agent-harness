@@ -1,21 +1,20 @@
 <p align="center">
   <pre>
- ███ ███ ███ ███ ███ █   █ ███ █   █ ███ █   █ ███ ███ 
-  █  █ █  █   █   █ █  ██ ██  █  ██  █ █ █ ██  █  █  
-  █  ███  ███ █   ███  █ █ █  █  █ █ █ █   █ █ █ ███ ███ 
-  █  █ █  █   █   █ █  █   █  █  █  ██ █   ██  █ █    █ 
-  █  █ █  ███ ███ █ █  █   █ ███ █   █ ███ █   █ ███ ███ 
+   _    ____ _____ _   _ __  __    _   _  _____ _____ ____  
+  / \  / ___| ____| \ | |  \/  |  | | | || ____|_   _/ ___| 
+ / _ \| |  _|  _| |  \| | |\/| |  | |_| ||  _|   | | \___ \ 
+/ ___ \ |_| | |___| |\  | |  | |  |  _  || |___  | |  ___) |
+/_/   \_\____|_____|_| \_|_|  |_|  |_| |_||_____| |_| |____/ 
   </pre>
 </p>
 
 <h3 align="center">The agentic coding loop, explained in ~450 lines.</h3>
 
 <p align="center">
-  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=flat-square&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://github.com/yo666666yo/minimal-agent-harness/workflows/Stars/badge.svg?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://github.com/yo666666yo/minimal-agent-harness/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python"></a>
   <a href="https://github.com/yo666666yo/minimal-agent-harness/releases"><img src="https://img.shields.io/badge/version-v1.0.0-green?style=flat-square" alt="Version"></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-2_minutes-orange?style=flat-square" alt="Quick Start"></a>
 </p>
 
 <p align="center">
@@ -26,104 +25,16 @@
 
 ---
 
-## Demo
-
-<p align="center">
-  <i>A 15-second terminal demo belongs here. Coming soon.<br>
-  Record with <a href="https://github.com/charmbracelet/vhs">vhs</a> or <a href="https://asciinema.org">asciinema</a>.</i>
-</p>
-
-```bash
-# Try it yourself right now — mock mode, no API key needed:
-python agent_harness.py --mock
-> Search the codebase for 'is_concurrency_safe'
-```
-
----
-
-## Why This Exists
-
-I use Claude Code every day. It reads files, writes files, runs bash, and searches my
-codebase — hundreds of times per session. One day I wondered: **what does that loop
-actually look like under the hood?**
-
-Turns out, the core architecture is elegant and small. But to understand it, I had to
-trace through thousands of lines of TypeScript across dozens of files. This project
-is the result of that digging — a single Python file that preserves every important
-design pattern while stripping away everything inessential.
-
-**You'll find this useful if:**
-
-- You use AI coding tools daily and want to understand how they work internally
-- You're building your own agent and want a reference implementation to study
-- You've read _about_ agents but never _read_ an agent's source code
-- You want to experiment with tool design, streaming execution, or context management
-
-**This is NOT:**
-
-- A production framework (use [LangChain](https://github.com/langchain-ai/langchain) or [AutoGen](https://github.com/microsoft/autogen))
-- An autonomous agent benchmark (see [BabyAGI](https://github.com/yoheinakajima/babyagi) or [AutoGPT](https://github.com/Significant-Gravitas/AutoGPT))
-- A multi-agent orchestration system
-- Something you should wrap in Docker and deploy to prod
-
----
-
-## Architecture
-
-### Four Design Decisions
-
-The entire harness flows from four choices, each borrowed from production agents:
-
-| Decision | Why |
-|---|---|
-| **Async generator as the control surface** | Yield events to the caller without blocking — CLI, TUI, or web UI all plug into the same stream. No callbacks, no polling. |
-| **Tools execute during streaming, not after** | In Claude Code, `bash` starts running the moment the model emits the tool_use block. This cuts round-trip latency in half. |
-| **Reads are parallel, writes are serial** | `read_file` and `grep` can run concurrently. `bash` and `write_file` lock out everything else — the same partitioning used in production. |
-| **Summarize, don't truncate** | When context fills up, older messages are summarized via a separate LLM call instead of being dropped. Truncation loses state; summarization preserves it. |
-
-### The Loop
-
-```
-User Input
-  |
-  v
-AgentHarness.run()           <-- async generator
-  |
-  +--> Summarize?             <-- auto-compact if context too long
-  |
-  +--> Call Model (streaming) <-- yields text_delta / tool_use events
-  |      |
-  |      +--> Tool Use Block? --> StreamingToolExecutor.add_tool()
-  |      |                          |
-  |      |                          +--> Concurrent-safe tools: run in parallel
-  |      |                          +--> Write tools (bash/edit): serial, exclusive
-  |      |                          +--> Bash error cascading: cancel siblings
-  |      |
-  |      +--> get_completed_results() --> yield to user (non-blocking)
-  |
-  +--> Wait for remaining tools  <-- get_remaining_results()
-  |
-  +--> Append assistant(tool_use) + user(tool_result) to messages
-  |
-  +--> Check max_turns / abort
-  |
-  +--> Loop back to Summarize step
-```
-
----
-
-## Quick Start
-
-### Step 1 — Clone and run (no API key needed)
+## Quick Start (2 minutes)
 
 ```bash
 git clone https://github.com/yo666666yo/minimal-agent-harness.git
 cd minimal-agent-harness
 pip install anthropic
-python agent_harness.py --mock
+python agent_harness.py --mock    # no API key needed
 ```
 
-You'll see:
+You'll see the agent loop in action — calling tools, streaming responses, and managing context:
 
 ```
 [Using mock API client — no real API calls]
@@ -131,40 +42,100 @@ You'll see:
 Minimal Agent Harness — interactive mode
 Model: mock
 Available tools: ['bash', 'read_file', 'write_file', 'grep']
-Type 'quit' to exit, 'abort' to stop the current turn.
 ============================================================
 
-> Read the README file
+> Search for 'is_concurrency_safe' in the codebase
 [Agent] Starting with 4 tools, max 10 turns
 
 [Turn 1/10]
 [Agent] Calling model...
-[Tool call] read_file({"file_path": "README.md"})
-[Tool result/OK] # Minimal Agent Harness ...
+  └─ [streaming] text_delta: "I'll search for that..."
+  └─ [streaming] tool_use: grep({"pattern": "is_concurrency_safe", "path": "."})
+[Tool call] grep({"pattern": "is_concurrency_safe", "path": "."})
+[Tool result/OK] Found 3 matches in agent_harness.py
+
+[Turn 2/10]
+[Agent] Calling model...
+  └─ [streaming] text_delta: "Found it in 3 places. Let me read the relevant section..."
+  └─ [streaming] tool_use: read_file({"file_path": "agent_harness.py", "start_line": 45})
+[Tool call] read_file({"file_path": "agent_harness.py", "start_line": 45})
+[Tool result/OK] class StreamingToolExecutor: ...
+
+[Agent] Done — 2 turns, 2 tool calls.
 ```
 
-### Step 2 — Use a real model (optional)
+For a real model, just add your API key:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 python agent_harness.py
 ```
 
-### Programmatic usage
+---
 
-```python
-import asyncio
-from agent_harness import AgentHarness, AgentConfig, MockAPIClient
+## What You'll Learn
 
-async def main():
-    client = MockAPIClient()
-    config = AgentConfig(max_turns=10)
-    harness = AgentHarness(client, config)
+This isn't a framework. It's a **reading guide to how production agents work** — implemented as a single, runnable Python file.
 
-    async for event in harness.run("Search for tool_use in the codebase"):
-        print(event)
+| Concept | Where in the code | Why it matters |
+|---|---|---|
+| **Async generator query loop** | `AgentHarness.run()` | The core pattern behind every AI coding assistant |
+| **Streaming tool execution** | `StreamingToolExecutor` | Tools start *during* model streaming, not after — cuts latency in half |
+| **Concurrent-safe vs exclusive tools** | `StreamingToolExecutor.add_tool()` | Read tools run in parallel; write tools lock exclusively |
+| **Context summarization** | `summarize_conversation()` | How agents handle long conversations without losing state |
+| **Turn limits & abort** | `AgentHarness.run()` | Graceful termination — the safety valve every agent needs |
 
-asyncio.run(main())
+**4 built-in tools** that mirror Claude Code's design:
+
+| Tool | Concurrency | What it demonstrates |
+|---|---|---|
+| `bash` | ❌ Exclusive | Shell execution with error cascading |
+| `read_file` | ✅ Safe | Parallel file reads with line ranges |
+| `write_file` | ❌ Exclusive | Serial writes with locking |
+| `grep` | ✅ Safe | Parallel codebase search |
+
+---
+
+## Architecture
+
+### Four Design Decisions
+
+Every production agent makes these same choices. This harness makes them explicit:
+
+| Decision | Why |
+|---|---|
+| **Async generator as the control surface** | Yield events to the caller without blocking — CLI, TUI, or web UI all plug into the same stream. No callbacks, no polling. |
+| **Tools execute during streaming, not after** | In Claude Code, `bash` starts running the moment the model emits the `tool_use` block. This cuts round-trip latency in half. |
+| **Reads are parallel, writes are serial** | `read_file` and `grep` can run concurrently. `bash` and `write_file` lock out everything else — the same partitioning used in production. |
+| **Summarize, don't truncate** | When context fills up, older messages are summarized via a separate LLM call instead of being dropped. Truncation loses state; summarization preserves it. |
+
+### The Loop
+
+```
+User Input
+  │
+  ▼
+AgentHarness.run()           ◄── async generator
+  │
+  ├──▶ Summarize?             ◄── auto-compact if context too long
+  │
+  ├──▶ Call Model (streaming) ◄── yields text_delta / tool_use events
+  │      │
+  │      ├──▶ Tool Use Block? ──▶ StreamingToolExecutor.add_tool()
+  │      │                          │
+  │      │                          ├──▶ Concurrent-safe tools: run in parallel
+  │      │                          ├──▶ Write tools (bash/edit): serial, exclusive
+  │      │                          └──▶ Bash error cascading: cancel siblings
+  │      │
+  │      └──▶ get_completed_results() ──▶ yield to user (non-blocking)
+  │
+  ├──▶ Wait for remaining tools  ◄── get_remaining_results()
+  │
+  ├──▶ Append assistant(tool_use) + user(tool_result) to messages
+  │
+  ├──▶ Check max_turns / abort
+  │
+  └──▶ Loop back to Summarize step
 ```
 
 ---
@@ -175,17 +146,17 @@ asyncio.run(main())
 
 The heart of the harness. Each iteration:
 1. Calls the LLM with current messages + tool definitions
-2. Model returns text (done) or tool_use blocks (continue)
+2. Model returns text (done) or `tool_use` blocks (continue)
 3. Tools execute, results feed back as user messages
 4. Loop continues until no more tool calls or max turns reached
 
 ```
 messages = [user: "read the file"]
-  -> model returns tool_use: read_file("foo.py")
-  -> tool executes, returns content
-  -> messages = [user: "...", assistant: tool_use, user: tool_result]
-  -> model returns text: "The file contains..."
-  -> no tool_use -> DONE
+  → model returns tool_use: read_file("foo.py")
+  → tool executes, returns content
+  → messages = [user: "...", assistant: tool_use, user: tool_result]
+  → model returns text: "The file contains..."
+  → no tool_use → DONE
 ```
 
 > **Why it matters:** The `while True` + async generator combination is what lets the host
@@ -198,8 +169,8 @@ Tools begin executing **during** model streaming, not after. Two classes of tool
 
 | Type | Examples | Behavior |
 |------|----------|----------|
-| **Concurrency-safe** | read_file, grep | Run in parallel with other safe tools |
-| **Exclusive** | bash, write_file | Block all other tools, run serially |
+| **Concurrency-safe** | `read_file`, `grep` | Run in parallel with other safe tools |
+| **Exclusive** | `bash`, `write_file` | Block all other tools, run serially |
 
 Bash errors trigger **sibling cancellation** — if one bash command fails, all parallel
 bash commands are killed (since they often form dependency chains).
@@ -216,8 +187,8 @@ preserved for continuity.
 
 ```
 [msg1, msg2, ..., msg98, msg99, msg100]  (100 messages, ~8000 tokens)
-              |
-              v  summarize msg1..msg96
+              │
+              ▼  summarize msg1..msg96
 [summary, msg97, msg98, msg99, msg100]   (5 messages, ~1500 tokens)
 ```
 
@@ -227,18 +198,20 @@ preserved for continuity.
 
 ---
 
-## When to Use This
+## Source Code Map
 
-| You want to... | This repo | LangChain | AutoGen | BabyAGI |
-|---|---|---|---|---|
-| **Read and understand agent internals** | Yes — it's one file | No — heavy abstraction | Maybe — more complex | Yes — also small |
-| **Build a production agent** | No | Yes | Yes | Maybe |
-| **Experiment with tool execution patterns** | Yes | Overkill | Overkill | Overkill |
-| **Learn async Python patterns for agents** | Yes | No — too many layers | No | Maybe |
-| **Get something working in 5 minutes** | Yes — mock mode | No — steep curve | Maybe | Yes |
+The entire agent lives in [`agent_harness.py`](agent_harness.py) (~450 lines). Here's where to look:
 
-**The TL;DR:** This is a textbook, not a framework. Read it to understand how agents work,
-then use LangChain or AutoGen to build something real.
+| Lines | Component | What it does |
+|---:|---|---|
+| 1–60 | `Tool` base class + built-in tools | Tool interface: `name`, `description`, `input_schema`, `call()` |
+| 60–120 | `StreamingToolExecutor` | Concurrent vs exclusive tool dispatch, error cascading |
+| 120–200 | `AgentConfig` + `AgentHarness.__init__` | Configuration: model, max turns, tools, auto-compact threshold |
+| 200–350 | `AgentHarness.run()` | **The main loop** — streaming, tool dispatch, turn management |
+| 350–420 | `summarize_conversation()` | Context window management via LLM summarization |
+| 420–450 | `__main__` | CLI entry point with mock/real mode toggle |
+
+Start at `AgentHarness.run()` and follow the calls. It reads top-to-bottom in under 20 minutes.
 
 ---
 
@@ -267,6 +240,40 @@ class WebSearchTool(Tool):
 # Register it
 config = AgentConfig(tools=DEFAULT_TOOLS + [WebSearchTool()])
 ```
+
+---
+
+## Programmatic Usage
+
+```python
+import asyncio
+from agent_harness import AgentHarness, AgentConfig, MockAPIClient
+
+async def main():
+    client = MockAPIClient()
+    config = AgentConfig(max_turns=10)
+    harness = AgentHarness(client, config)
+
+    async for event in harness.run("Search for tool_use in the codebase"):
+        print(event)
+
+asyncio.run(main())
+```
+
+---
+
+## When to Use This
+
+| You want to... | This repo | LangChain | AutoGen | BabyAGI |
+|---|---|---|---|---|
+| **Read and understand agent internals** | ✅ One file | ❌ Heavy abstraction | ⚠️ More complex | ✅ Also small |
+| **Build a production agent** | ❌ | ✅ | ✅ | ⚠️ |
+| **Experiment with tool execution patterns** | ✅ | Overkill | Overkill | Overkill |
+| **Learn async Python patterns for agents** | ✅ | ❌ Too many layers | ❌ | ⚠️ |
+| **Get something working in 5 minutes** | ✅ Mock mode | ❌ Steep curve | ⚠️ | ✅ |
+
+**The TL;DR:** This is a textbook, not a framework. Read it to understand how agents work,
+then use LangChain or AutoGen to build something real.
 
 ---
 
@@ -310,6 +317,16 @@ then replaces the old messages with the summary. The code is in
 `summarize_conversation()` — about 40 lines.
 </details>
 
+<details>
+<summary><b>How does this compare to Claude Code's actual source?</b></summary>
+
+The code comments cite exact files and line numbers from the Claude Code source:
+`src/query.ts` (the loop), `src/QueryEngine.ts` (state), `src/services/tools/StreamingToolExecutor.ts`
+(tool dispatch), `src/services/compact/compact.ts` (summarization). This harness preserves
+every design pattern while stripping away production concerns (auth, multi-model routing,
+IDE integration). Think of it as a clean-room reimplementation for learning.
+</details>
+
 ---
 
 ## Next Steps
@@ -318,15 +335,15 @@ then replaces the old messages with the summary. The code is in
 <tr>
 <td width="50%">
 
-### Read the Source
+### 🔍 Read the Source
 The entire agent is in [`agent_harness.py`](agent_harness.py).
 Start at `AgentHarness.run()` (the query loop) and follow the calls.
-It reads top-to-bottom in under 20 minutes.
+Use the [source code map](#source-code-map) above to navigate.
 
 </td>
 <td width="50%">
 
-### Build a Tool
+### 🔧 Build a Tool
 Subclass `Tool`, implement `call()`, register it with `AgentConfig`.
 Try a web search, a database query, or a Jira ticket lookup.
 The [custom tools section](#adding-custom-tools) has a template.
@@ -336,7 +353,7 @@ The [custom tools section](#adding-custom-tools) has a template.
 <tr>
 <td>
 
-### Read the References
+### 📖 Read the References
 The code comments cite exact files and line numbers from the
 Claude Code source. Trace them: `src/query.ts`, `src/QueryEngine.ts`,
 `src/services/tools/`.
@@ -344,7 +361,7 @@ Claude Code source. Trace them: `src/query.ts`, `src/QueryEngine.ts`,
 </td>
 <td>
 
-### Contribute
+### 🤝 Contribute
 Found a bug? Have an idea for a better explanation?
 Open an issue or PR. This is a teaching tool — clarity
 improvements are always welcome.
