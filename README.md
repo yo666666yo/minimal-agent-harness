@@ -3,7 +3,7 @@
 <h3 align="center">The agentic coding loop, explained in ~450 lines.</h3>
 
 <p align="center">
-  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://github.com/yo666666yo/minimal-agent-harness/workflows/Stars/badge.svg?style=flat-square&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://github.com/yo666666yo/minimal-agent-harness/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python"></a>
   <a href="https://github.com/yo666666yo/minimal-agent-harness/releases"><img src="https://img.shields.io/badge/version-v1.0.0-green?style=flat-square" alt="Version"></a>
