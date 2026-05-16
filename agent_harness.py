@@ -33,11 +33,9 @@ import asyncio
 import json
 import os
 import sys
-import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Optional, Sequence
+from typing import Any, AsyncGenerator, Sequence
 
 # ---------------------------------------------------------------------------
 # Tool System (cf. src/Tool.ts, src/services/tools/toolExecution.ts)
@@ -89,7 +87,7 @@ class BashTool(Tool):
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
             proc.kill()
-            return f"<tool_use_error>Command timed out after 30s</tool_use_error>"
+            return "<tool_use_error>Command timed out after 30s</tool_use_error>"
         result = stdout.decode("utf-8", errors="replace")
         if stderr:
             result += "\n[stderr]\n" + stderr.decode("utf-8", errors="replace")
@@ -105,6 +103,14 @@ class ReadTool(Tool):
         "type": "object",
         "properties": {
             "file_path": {"type": "string", "description": "Path to the file to read"},
+            "start_line": {
+                "type": "integer",
+                "description": "Optional 1-based first line to read",
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "Optional 1-based last line to read, inclusive",
+            },
         },
         "required": ["file_path"],
     }
@@ -113,6 +119,25 @@ class ReadTool(Tool):
     async def call(self, input: dict[str, Any], abort_signal: asyncio.Event | None) -> str:
         path = input["file_path"]
         try:
+            start_line = input.get("start_line")
+            end_line = input.get("end_line")
+            if start_line is not None or end_line is not None:
+                start = int(start_line or 1)
+                end = int(end_line) if end_line is not None else None
+                if start < 1:
+                    return "<tool_use_error>start_line must be >= 1</tool_use_error>"
+                if end is not None and end < start:
+                    return "<tool_use_error>end_line must be >= start_line</tool_use_error>"
+
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                content = "".join(lines[start - 1:end])
+                if not content:
+                    return "(empty range)"
+                if len(content) > 8000:
+                    content = content[:8000] + "\n... [truncated at 8000 chars]"
+                return content
+
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read(8000)
             if len(content) == 8000:
@@ -570,7 +595,6 @@ async def summarize_conversation(
     # Split: keep the last 4 messages, summarize the rest
     keep_count = min(4, len(messages) - 2)
     messages_to_summarize = messages[:-keep_count]
-    messages_to_keep = messages[-keep_count:]
 
     # Build a text representation of what we're summarizing
     summary_input = _format_messages_for_summary(messages_to_summarize)
@@ -596,7 +620,7 @@ async def summarize_conversation(
     return CompactionResult(
         summary_text=summary,
         pre_compact_message_count=len(messages),
-        post_compact_message_count=1 + len(messages_to_keep),
+        post_compact_message_count=1 + keep_count,
     )
 
 

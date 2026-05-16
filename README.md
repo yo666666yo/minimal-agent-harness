@@ -1,381 +1,205 @@
-<h1 align="center">🧠 minimal-agent-harness</h1>
+# minimal-agent-harness
 
-<h3 align="center">The agentic coding loop, explained in ~450 lines.</h3>
+> A runnable, single-file reference implementation of the core loop behind coding agents.
 
-<p align="center">
-  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=flat-square&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/yo666666yo/minimal-agent-harness/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python"></a>
-  <a href="https://github.com/yo666666yo/minimal-agent-harness/releases"><img src="https://img.shields.io/badge/version-v1.0.0-green?style=flat-square" alt="Version"></a>
-</p>
+[![Stars](https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=flat-square&color=yellow)](https://github.com/yo666666yo/minimal-agent-harness/stargazers)
+[![CI](https://img.shields.io/github/actions/workflow/status/yo666666yo/minimal-agent-harness/ci.yml?style=flat-square)](https://github.com/yo666666yo/minimal-agent-harness/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
 
-<p align="center">
-  <b>Stop reading about agents. Read an agent.</b><br>
-  A single Python file that distills how Claude Code, Cursor, and other<br>
-  AI coding tools work under the hood — <b>streaming, tool use, auto-compact, and all.</b>
-</p>
+Most agent frameworks hide the interesting part behind abstractions. This repo keeps the
+runtime small enough to read in one sitting while still showing the mechanics that matter:
 
----
+- **Streaming model loop**: text and tool events are yielded as they arrive.
+- **Tool execution during streaming**: tools start as soon as the model emits a call.
+- **Safe parallelism**: read-only tools can overlap; write/shell tools run exclusively.
+- **Auto-compact**: long conversations are summarized instead of blindly truncated.
+- **Provider boundary**: the agent loop talks to a tiny `APIClient` interface.
 
-## Quick Start (2 minutes)
+This is a learning harness, not a production framework. Use it to understand how coding
+agents work, then lift the patterns into your own stack.
+
+## Quick Start
 
 ```bash
 git clone https://github.com/yo666666yo/minimal-agent-harness.git
 cd minimal-agent-harness
 pip install anthropic
-python agent_harness.py --mock    # no API key needed
+python agent_harness.py --mock
 ```
 
-You'll see the agent loop in action — calling tools, streaming responses, and managing context:
+Mock mode needs no API key and still exercises the loop:
 
-```
-[Using mock API client — no real API calls]
-============================================================
-Minimal Agent Harness — interactive mode
-Model: mock
-Available tools: ['bash', 'read_file', 'write_file', 'grep']
-============================================================
-
-> Search for 'is_concurrency_safe' in the codebase
+```text
+> search for "Tool" in the codebase
 [Agent] Starting with 4 tools, max 10 turns
-
 [Turn 1/10]
 [Agent] Calling model...
-  └─ [streaming] text_delta: "I'll search for that..."
-  └─ [streaming] tool_use: grep({"pattern": "is_concurrency_safe", "path": "."})
-[Tool call] grep({"pattern": "is_concurrency_safe", "path": "."})
-[Tool result/OK] Found 3 matches in agent_harness.py
-
-[Turn 2/10]
-[Agent] Calling model...
-  └─ [streaming] text_delta: "Found it in 3 places. Let me read the relevant section..."
-  └─ [streaming] tool_use: read_file({"file_path": "agent_harness.py", "start_line": 45})
-[Tool call] read_file({"file_path": "agent_harness.py", "start_line": 45})
-[Tool result/OK] class StreamingToolExecutor: ...
-
-[Agent] Done — 2 turns, 2 tool calls.
+[Tool call] grep({"pattern": "Tool", "path": "."})
+[Tool result/OK] ./agent_harness.py:...
 ```
 
-For a real model, just add your API key:
+To use Anthropic:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 python agent_harness.py
 ```
 
----
+## Why This Exists
 
-## What You'll Learn
+If you want to build agents, you eventually need to understand the runtime:
 
-This isn't a framework. It's a **reading guide to how production agents work** — implemented as a single, runnable Python file.
+1. How does the app keep streaming while tools are running?
+2. How are tool calls represented in conversation history?
+3. Which tools can run concurrently, and which must lock the workspace?
+4. What happens when the context window fills up?
+5. Where does provider-specific API code stop and agent logic begin?
 
-| Concept | Where in the code | Why it matters |
+`agent_harness.py` answers those questions directly in Python.
+
+## Core Concepts
+
+| Concept | Where to look | What it demonstrates |
 |---|---|---|
-| **Async generator query loop** | `AgentHarness.run()` | The core pattern behind every AI coding assistant |
-| **Streaming tool execution** | `StreamingToolExecutor` | Tools start *during* model streaming, not after — cuts latency in half |
-| **Concurrent-safe vs exclusive tools** | `StreamingToolExecutor.add_tool()` | Read tools run in parallel; write tools lock exclusively |
-| **Context summarization** | `summarize_conversation()` | How agents handle long conversations without losing state |
-| **Turn limits & abort** | `AgentHarness.run()` | Graceful termination — the safety valve every agent needs |
-
-**4 built-in tools** that mirror Claude Code's design:
-
-| Tool | Concurrency | What it demonstrates |
-|---|---|---|
-| `bash` | ❌ Exclusive | Shell execution with error cascading |
-| `read_file` | ✅ Safe | Parallel file reads with line ranges |
-| `write_file` | ❌ Exclusive | Serial writes with locking |
-| `grep` | ✅ Safe | Parallel codebase search |
-
----
+| Tool interface | `Tool` | Name, description, JSON schema, async execution |
+| Provider adapter | `APIClient`, `AnthropicClient`, `MockAPIClient` | Normalize model events into `text_delta`, `tool_use`, `message_stop` |
+| Streaming executor | `StreamingToolExecutor` | Start tools while model streaming continues |
+| Concurrency policy | `is_concurrency_safe` | Parallel reads, exclusive writes |
+| Context management | `summarize_conversation()` | Replace old history with a compact summary |
+| Agent loop | `AgentHarness.run()` | The async generator that ties everything together |
 
 ## Architecture
 
-### Four Design Decisions
-
-Every production agent makes these same choices. This harness makes them explicit:
-
-| Decision | Why |
-|---|---|
-| **Async generator as the control surface** | Yield events to the caller without blocking — CLI, TUI, or web UI all plug into the same stream. No callbacks, no polling. |
-| **Tools execute during streaming, not after** | In Claude Code, `bash` starts running the moment the model emits the `tool_use` block. This cuts round-trip latency in half. |
-| **Reads are parallel, writes are serial** | `read_file` and `grep` can run concurrently. `bash` and `write_file` lock out everything else — the same partitioning used in production. |
-| **Summarize, don't truncate** | When context fills up, older messages are summarized via a separate LLM call instead of being dropped. Truncation loses state; summarization preserves it. |
-
-### The Loop
-
-```
-User Input
-  │
-  ▼
-AgentHarness.run()           ◄── async generator
-  │
-  ├──▶ Summarize?             ◄── auto-compact if context too long
-  │
-  ├──▶ Call Model (streaming) ◄── yields text_delta / tool_use events
-  │      │
-  │      ├──▶ Tool Use Block? ──▶ StreamingToolExecutor.add_tool()
-  │      │                          │
-  │      │                          ├──▶ Concurrent-safe tools: run in parallel
-  │      │                          ├──▶ Write tools (bash/edit): serial, exclusive
-  │      │                          └──▶ Bash error cascading: cancel siblings
-  │      │
-  │      └──▶ get_completed_results() ──▶ yield to user (non-blocking)
-  │
-  ├──▶ Wait for remaining tools  ◄── get_remaining_results()
-  │
-  ├──▶ Append assistant(tool_use) + user(tool_result) to messages
-  │
-  ├──▶ Check max_turns / abort
-  │
-  └──▶ Loop back to Summarize step
+```text
+User input
+  |
+  v
+AgentHarness.run()
+  |
+  +--> estimate context size
+  |      |
+  |      +--> summarize older messages if needed
+  |
+  +--> stream model events
+  |      |
+  |      +--> text_delta ---------------> yield to caller
+  |      |
+  |      +--> tool_use -----------------> StreamingToolExecutor.add_tool()
+  |                                       |
+  |                                       +--> safe tools run in parallel
+  |                                       +--> exclusive tools run serially
+  |
+  +--> append assistant tool calls and user tool results
+  |
+  +--> continue until no tool calls or max_turns is reached
 ```
 
----
+## Built-In Tools
 
-## Three Core Mechanisms
+| Tool | Safe to run in parallel? | Purpose |
+|---|---:|---|
+| `read_file` | Yes | Read full files or optional line ranges |
+| `grep` | Yes | Search Python files in a directory |
+| `write_file` | No | Write a file, serially |
+| `bash` | No | Run a shell command with a timeout |
 
-### 1. Query Loop (async generator `while True`)
-
-The heart of the harness. Each iteration:
-1. Calls the LLM with current messages + tool definitions
-2. Model returns text (done) or `tool_use` blocks (continue)
-3. Tools execute, results feed back as user messages
-4. Loop continues until no more tool calls or max turns reached
-
-```
-messages = [user: "read the file"]
-  → model returns tool_use: read_file("foo.py")
-  → tool executes, returns content
-  → messages = [user: "...", assistant: tool_use, user: tool_result]
-  → model returns text: "The file contains..."
-  → no tool_use → DONE
-```
-
-> **Why it matters:** The `while True` + async generator combination is what lets the host
-> application (CLI, IDE, web UI) stay responsive during tool execution. Every AI coding
-> assistant you've used works this way.
-
-### 2. Streaming Tool Execution
-
-Tools begin executing **during** model streaming, not after. Two classes of tools:
-
-| Type | Examples | Behavior |
-|------|----------|----------|
-| **Concurrency-safe** | `read_file`, `grep` | Run in parallel with other safe tools |
-| **Exclusive** | `bash`, `write_file` | Block all other tools, run serially |
-
-Bash errors trigger **sibling cancellation** — if one bash command fails, all parallel
-bash commands are killed (since they often form dependency chains).
-
-> **Why it matters:** In naive agents, you wait for the model to finish before running
-> tools. That adds round-trip latency. Production agents start tool execution mid-stream —
-> a `bash` command launches while the model is still deciding whether to call `grep` next.
-
-### 3. Context Summarization (Auto-Compact)
-
-When the conversation exceeds a token threshold, older messages are summarized via a
-separate LLM call. The summary replaces the old history, and recent messages are
-preserved for continuity.
-
-```
-[msg1, msg2, ..., msg98, msg99, msg100]  (100 messages, ~8000 tokens)
-              │
-              ▼  summarize msg1..msg96
-[summary, msg97, msg98, msg99, msg100]   (5 messages, ~1500 tokens)
-```
-
-> **Why it matters:** Long conversations overflow the context window. Dropping old messages
-> loses state (what file was opened? what search was running?). Summarizing preserves the
-> narrative while freeing space — it's how agents maintain coherence in long sessions.
-
----
-
-## Source Code Map
-
-The entire agent lives in [`agent_harness.py`](agent_harness.py) (~450 lines). Here's where to look:
-
-| Lines | Component | What it does |
-|---:|---|---|
-| 1–60 | `Tool` base class + built-in tools | Tool interface: `name`, `description`, `input_schema`, `call()` |
-| 60–120 | `StreamingToolExecutor` | Concurrent vs exclusive tool dispatch, error cascading |
-| 120–200 | `AgentConfig` + `AgentHarness.__init__` | Configuration: model, max turns, tools, auto-compact threshold |
-| 200–350 | `AgentHarness.run()` | **The main loop** — streaming, tool dispatch, turn management |
-| 350–420 | `summarize_conversation()` | Context window management via LLM summarization |
-| 420–450 | `__main__` | CLI entry point with mock/real mode toggle |
-
-Start at `AgentHarness.run()` and follow the calls. It reads top-to-bottom in under 20 minutes.
-
----
-
-## Adding Custom Tools
-
-Every tool in Claude Code started as a subclass like this one. Read, write, grep, bash —
-same pattern.
-
-```python
-class WebSearchTool(Tool):
-    name = "web_search"
-    description = "Search the web"
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"}
-        },
-        "required": ["query"],
-    }
-    is_concurrency_safe = True  # Read-only
-
-    async def call(self, input, abort_signal):
-        # Your implementation here
-        return f"Results for: {input['query']}"
-
-# Register it
-config = AgentConfig(tools=DEFAULT_TOOLS + [WebSearchTool()])
-```
-
----
+The tools are intentionally small. The point is to make the control flow visible.
 
 ## Programmatic Usage
 
 ```python
 import asyncio
-from agent_harness import AgentHarness, AgentConfig, MockAPIClient
+
+from agent_harness import AgentConfig, AgentHarness, MockAPIClient
+
 
 async def main():
-    client = MockAPIClient()
-    config = AgentConfig(max_turns=10)
-    harness = AgentHarness(client, config)
+    harness = AgentHarness(MockAPIClient(), AgentConfig(max_turns=5))
 
-    async for event in harness.run("Search for tool_use in the codebase"):
+    async for event in harness.run("Search for 'StreamingToolExecutor'"):
         print(event)
+
 
 asyncio.run(main())
 ```
 
----
+## Add a Custom Tool
+
+```python
+from agent_harness import AgentConfig, AgentHarness, MockAPIClient, Tool, DEFAULT_TOOLS
+
+
+class TicketLookupTool(Tool):
+    name = "ticket_lookup"
+    description = "Look up an internal ticket by ID."
+    input_schema = {
+        "type": "object",
+        "properties": {"ticket_id": {"type": "string"}},
+        "required": ["ticket_id"],
+    }
+    is_concurrency_safe = True
+
+    async def call(self, input, abort_signal):
+        return f"Ticket {input['ticket_id']}: example result"
+
+
+config = AgentConfig(tools=DEFAULT_TOOLS + [TicketLookupTool()])
+harness = AgentHarness(MockAPIClient(), config)
+```
+
+More examples:
+
+- [`examples/custom_tool.py`](examples/custom_tool.py): add a small domain tool.
+- [`examples/openai_client.py`](examples/openai_client.py): adapt the harness to OpenAI's Responses API.
+
+## Project Layout
+
+```text
+agent_harness.py              # the readable core
+examples/
+  custom_tool.py              # custom tool example
+  openai_client.py            # optional OpenAI provider adapter
+tests/
+  test_agent_harness.py       # focused regression tests
+.github/workflows/ci.yml      # pytest + ruff
+```
 
 ## When to Use This
 
-| You want to... | This repo | LangChain | AutoGen | BabyAGI |
-|---|---|---|---|---|
-| **Read and understand agent internals** | ✅ One file | ❌ Heavy abstraction | ⚠️ More complex | ✅ Also small |
-| **Build a production agent** | ❌ | ✅ | ✅ | ⚠️ |
-| **Experiment with tool execution patterns** | ✅ | Overkill | Overkill | Overkill |
-| **Learn async Python patterns for agents** | ✅ | ❌ Too many layers | ❌ | ⚠️ |
-| **Get something working in 5 minutes** | ✅ Mock mode | ❌ Steep curve | ⚠️ | ✅ |
+| You want to... | Good fit? |
+|---|---|
+| Understand how coding-agent loops work | Yes |
+| Teach tool calling, streaming, and context compaction | Yes |
+| Prototype a narrow custom agent runtime | Yes |
+| Replace LangChain, AutoGen, or a production agent platform | No |
+| Run untrusted shell commands safely | No |
 
-**The TL;DR:** This is a textbook, not a framework. Read it to understand how agents work,
-then use LangChain or AutoGen to build something real.
+## Roadmap
 
----
+- Provider examples: OpenAI, Gemini, LiteLLM.
+- Better tool sandbox examples.
+- More precise token accounting.
+- A terminal recording for the README.
+- Small walkthrough docs for each subsystem.
 
-## FAQ
+## Contributing
 
-<details>
-<summary><b>Why Python? Claude Code is written in TypeScript.</b></summary>
+Contributions that keep the code readable are welcome. Good first issues include:
 
-Python has lower syntax overhead for an educational project — no compile step, no
-`node_modules`. Python's `async for` / `asyncio` primitives map cleanly to the
-generator-based query loop. The concepts transfer directly; you'll recognize the
-same patterns in the TypeScript source.
-</details>
+- Add a provider adapter under `examples/`.
+- Improve a built-in tool without hiding the control flow.
+- Add a focused regression test.
+- Clarify README or tutorial sections.
 
-<details>
-<summary><b>Can I use this with OpenAI models instead of Anthropic?</b></summary>
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
 
-Not out of the box, but it's designed to be easy. The `APIClient` base class is an
-abstract interface. Write an `OpenAIClient` that implements `stream_message()` and
-converts OpenAI's tool-calling format to the same event format (`text_delta`,
-`tool_use`, `message_stop`). The rest of the harness doesn't care which provider
-is behind it.
-</details>
+## Security
 
-<details>
-<summary><b>Is this production-ready?</b></summary>
+This project includes a `bash` tool for teaching purposes. It executes local shell commands.
+Do not expose it to untrusted users or run it against sensitive workspaces. See
+[`SECURITY.md`](SECURITY.md) for details.
 
-No. Deliberately not. There's no error recovery, no retry logic, no rate limiting,
-no authentication beyond an API key, and the summarization makes a standalone call
-without prompt cache reuse. Use it to learn the patterns, then apply them in a
-production framework.
-</details>
+## License
 
-<details>
-<summary><b>How does auto-compact decide when to summarize?</b></summary>
-
-It estimates token count from message length: `len(json.dumps(messages)) // 4`.
-When this exceeds `auto_compact_threshold_tokens` (default: 4000), it summarizes
-all but the last ~4 messages into a single paragraph using a separate LLM call,
-then replaces the old messages with the summary. The code is in
-`summarize_conversation()` — about 40 lines.
-</details>
-
-<details>
-<summary><b>How does this compare to Claude Code's actual source?</b></summary>
-
-The code comments cite exact files and line numbers from the Claude Code source:
-`src/query.ts` (the loop), `src/QueryEngine.ts` (state), `src/services/tools/StreamingToolExecutor.ts`
-(tool dispatch), `src/services/compact/compact.ts` (summarization). This harness preserves
-every design pattern while stripping away production concerns (auth, multi-model routing,
-IDE integration). Think of it as a clean-room reimplementation for learning.
-</details>
-
----
-
-## Next Steps
-
-<table>
-<tr>
-<td width="50%">
-
-### 🔍 Read the Source
-The entire agent is in [`agent_harness.py`](agent_harness.py).
-Start at `AgentHarness.run()` (the query loop) and follow the calls.
-Use the [source code map](#source-code-map) above to navigate.
-
-</td>
-<td width="50%">
-
-### 🔧 Build a Tool
-Subclass `Tool`, implement `call()`, register it with `AgentConfig`.
-Try a web search, a database query, or a Jira ticket lookup.
-The [custom tools section](#adding-custom-tools) has a template.
-
-</td>
-</tr>
-<tr>
-<td>
-
-### 📖 Read the References
-The code comments cite exact files and line numbers from the
-Claude Code source. Trace them: `src/query.ts`, `src/QueryEngine.ts`,
-`src/services/tools/`.
-
-</td>
-<td>
-
-### 🤝 Contribute
-Found a bug? Have an idea for a better explanation?
-Open an issue or PR. This is a teaching tool — clarity
-improvements are always welcome.
-
-</td>
-</tr>
-<tr>
-<td colspan="2" align="center">
-
-### ⭐ Star the Repo
-If this helped you understand how agents work, [give it a star](https://github.com/yo666666yo/minimal-agent-harness) — it helps other developers find it.
-
-</td>
-</tr>
-</table>
-
----
-
-<p align="center">
-  <sub>
-    Built with Python and curiosity |
-    <a href="https://github.com/yo666666yo/minimal-agent-harness/blob/master/LICENSE">MIT License</a> |
-    <a href="https://github.com/yo666666yo">@yo666666yo</a>
-  </sub>
-</p>
+MIT. See [`LICENSE`](LICENSE).
