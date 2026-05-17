@@ -1,25 +1,43 @@
-# minimal-agent-harness
+<p align="center">
+  <img src="assets/banner.svg" alt="Minimal Agent Harness banner" width="100%">
+</p>
 
-> A runnable, single-file reference implementation of the core loop behind coding agents.
+<h1 align="center">Minimal Agent Harness</h1>
 
-[![Stars](https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=flat-square&color=yellow)](https://github.com/yo666666yo/minimal-agent-harness/stargazers)
-[![CI](https://img.shields.io/github/actions/workflow/status/yo666666yo/minimal-agent-harness/ci.yml?style=flat-square)](https://github.com/yo666666yo/minimal-agent-harness/actions)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
+<p align="center">
+  <strong>The coding-agent runtime, distilled into one readable Python file.</strong>
+</p>
 
-Most agent frameworks hide the interesting part behind abstractions. This repo keeps the
-runtime small enough to read in one sitting while still showing the mechanics that matter:
+<p align="center">
+  <a href="https://github.com/yo666666yo/minimal-agent-harness/stargazers"><img src="https://img.shields.io/github/stars/yo666666yo/minimal-agent-harness?style=for-the-badge&color=F0C866" alt="GitHub stars"></a>
+  <a href="https://github.com/yo666666yo/minimal-agent-harness/actions"><img src="https://img.shields.io/github/actions/workflow/status/yo666666yo/minimal-agent-harness/ci.yml?style=for-the-badge" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2E8B7A?style=for-the-badge" alt="MIT license"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-356EA4?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+"></a>
+</p>
 
-- **Streaming model loop**: text and tool events are yielded as they arrive.
-- **Tool execution during streaming**: tools start as soon as the model emits a call.
-- **Safe parallelism**: read-only tools can overlap; write/shell tools run exclusively.
-- **Auto-compact**: long conversations are summarized instead of blindly truncated.
-- **Provider boundary**: the agent loop talks to a tiny `APIClient` interface.
+Most agent repos show you the product. This repo shows you the runtime.
 
-This is a learning harness, not a production framework. Use it to understand how coding
-agents work, then lift the patterns into your own stack.
+`minimal-agent-harness` is a compact, runnable reference implementation of the loop behind coding agents: stream model events, start tools while the model is still streaming, feed tool results back into the conversation, compact long context, and keep going until the task is done.
 
-## Quick Start
+It is intentionally small enough to read in one sitting, but complete enough to teach the control flow that production agent systems hide behind layers of framework code.
+
+---
+
+## What It Teaches
+
+**A real agent loop, not pseudocode.** `AgentHarness.run()` is an async generator that yields model text, tool calls, and tool results as they happen. It is the control surface a CLI, TUI, web UI, or IDE plugin can consume.
+
+**Streaming tool execution.** Tool calls begin as soon as the provider stream emits them. The harness does not wait for the full model message before starting work.
+
+**Safe concurrency.** Read-only tools can run in parallel. Shell and write tools are exclusive, so workspace-changing operations do not trample each other.
+
+**Context compaction.** Long histories are summarized into a compact prefix instead of being blindly truncated.
+
+**Provider isolation.** Anthropic, OpenAI, mocks, or your own endpoint fit behind the same tiny `APIClient` event interface.
+
+---
+
+## Quick Install
 
 ```bash
 git clone https://github.com/yo666666yo/minimal-agent-harness.git
@@ -39,74 +57,50 @@ Mock mode needs no API key and still exercises the loop:
 [Tool result/OK] ./agent_harness.py:...
 ```
 
-To use Anthropic:
+For a real Anthropic model:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 python agent_harness.py
 ```
 
-## Why This Exists
+---
 
-If you want to build agents, you eventually need to understand the runtime:
+## The Runtime In One Picture
 
-1. How does the app keep streaming while tools are running?
-2. How are tool calls represented in conversation history?
-3. Which tools can run concurrently, and which must lock the workspace?
-4. What happens when the context window fills up?
-5. Where does provider-specific API code stop and agent logic begin?
+<p align="center">
+  <img src="assets/runtime-flow.svg" alt="Agent runtime flow diagram" width="100%">
+</p>
 
-`agent_harness.py` answers those questions directly in Python.
+---
 
-## Core Concepts
+## Core Pieces
 
-| Concept | Where to look | What it demonstrates |
+| Piece | File | Why it matters |
 |---|---|---|
-| Tool interface | `Tool` | Name, description, JSON schema, async execution |
-| Provider adapter | `APIClient`, `AnthropicClient`, `MockAPIClient` | Normalize model events into `text_delta`, `tool_use`, `message_stop` |
-| Streaming executor | `StreamingToolExecutor` | Start tools while model streaming continues |
-| Concurrency policy | `is_concurrency_safe` | Parallel reads, exclusive writes |
-| Context management | `summarize_conversation()` | Replace old history with a compact summary |
-| Agent loop | `AgentHarness.run()` | The async generator that ties everything together |
+| Tool interface | `Tool` | Defines name, description, JSON schema, and async execution |
+| Provider adapter | `APIClient` | Normalizes model streams into `text_delta`, `tool_use`, and `message_stop` |
+| Mock model | `MockAPIClient` | Lets you run the harness without an API key |
+| Streaming executor | `StreamingToolExecutor` | Starts tools during model streaming |
+| Context compacting | `summarize_conversation()` | Preserves task state when history gets long |
+| Agent loop | `AgentHarness.run()` | The readable heart of the project |
 
-## Architecture
-
-```text
-User input
-  |
-  v
-AgentHarness.run()
-  |
-  +--> estimate context size
-  |      |
-  |      +--> summarize older messages if needed
-  |
-  +--> stream model events
-  |      |
-  |      +--> text_delta ---------------> yield to caller
-  |      |
-  |      +--> tool_use -----------------> StreamingToolExecutor.add_tool()
-  |                                       |
-  |                                       +--> safe tools run in parallel
-  |                                       +--> exclusive tools run serially
-  |
-  +--> append assistant tool calls and user tool results
-  |
-  +--> continue until no tool calls or max_turns is reached
-```
+---
 
 ## Built-In Tools
 
-| Tool | Safe to run in parallel? | Purpose |
+| Tool | Parallel? | Purpose |
 |---|---:|---|
-| `read_file` | Yes | Read full files or optional line ranges |
-| `grep` | Yes | Search Python files in a directory |
-| `write_file` | No | Write a file, serially |
-| `bash` | No | Run a shell command with a timeout |
+| `read_file` | Yes | Read full files or line ranges |
+| `grep` | Yes | Search Python files |
+| `write_file` | No | Write files with exclusive access |
+| `bash` | No | Run shell commands with a timeout |
 
-The tools are intentionally small. The point is to make the control flow visible.
+The tools are deliberately simple. The value is the orchestration pattern.
 
-## Programmatic Usage
+---
+
+## Use It As A Library
 
 ```python
 import asyncio
@@ -124,10 +118,12 @@ async def main():
 asyncio.run(main())
 ```
 
-## Add a Custom Tool
+---
+
+## Extend It
 
 ```python
-from agent_harness import AgentConfig, AgentHarness, MockAPIClient, Tool, DEFAULT_TOOLS
+from agent_harness import AgentConfig, DEFAULT_TOOLS, MockAPIClient, Tool, AgentHarness
 
 
 class TicketLookupTool(Tool):
@@ -148,15 +144,17 @@ config = AgentConfig(tools=DEFAULT_TOOLS + [TicketLookupTool()])
 harness = AgentHarness(MockAPIClient(), config)
 ```
 
-More examples:
+Examples:
 
-- [`examples/custom_tool.py`](examples/custom_tool.py): add a small domain tool.
-- [`examples/openai_client.py`](examples/openai_client.py): adapt the harness to OpenAI's Responses API.
+- [`examples/custom_tool.py`](examples/custom_tool.py) - add a small domain tool.
+- [`examples/openai_client.py`](examples/openai_client.py) - adapt the harness to OpenAI's Responses API.
 
-## Project Layout
+---
+
+## Project Map
 
 ```text
-agent_harness.py              # the readable core
+agent_harness.py              # the readable core runtime
 examples/
   custom_tool.py              # custom tool example
   openai_client.py            # optional OpenAI provider adapter
@@ -165,41 +163,38 @@ tests/
 .github/workflows/ci.yml      # pytest + ruff
 ```
 
-## When to Use This
+---
 
-| You want to... | Good fit? |
+## Good Fit / Bad Fit
+
+| Use case | Fit |
 |---|---|
-| Understand how coding-agent loops work | Yes |
-| Teach tool calling, streaming, and context compaction | Yes |
-| Prototype a narrow custom agent runtime | Yes |
-| Replace LangChain, AutoGen, or a production agent platform | No |
-| Run untrusted shell commands safely | No |
+| Learn how coding-agent loops work | Excellent |
+| Teach streaming tool use and compaction | Excellent |
+| Prototype a narrow custom agent runtime | Good |
+| Replace LangChain, AutoGen, or a production platform | Poor |
+| Run untrusted shell commands safely | Poor |
+
+---
 
 ## Roadmap
 
-- Provider examples: OpenAI, Gemini, LiteLLM.
-- Better tool sandbox examples.
-- More precise token accounting.
+- Provider examples for Gemini and LiteLLM.
+- Better sandbox examples for shell and file tools.
 - A terminal recording for the README.
-- Small walkthrough docs for each subsystem.
+- More precise token accounting.
+- Walkthrough docs for the executor, compacting, and provider adapter.
+
+---
 
 ## Contributing
 
-Contributions that keep the code readable are welcome. Good first issues include:
-
-- Add a provider adapter under `examples/`.
-- Improve a built-in tool without hiding the control flow.
-- Add a focused regression test.
-- Clarify README or tutorial sections.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
+Contributions are welcome when they keep the core easy to read. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), run `pytest -q`, and keep provider-specific complexity in `examples/` unless it belongs in the runtime itself.
 
 ## Security
 
-This project includes a `bash` tool for teaching purposes. It executes local shell commands.
-Do not expose it to untrusted users or run it against sensitive workspaces. See
-[`SECURITY.md`](SECURITY.md) for details.
+This harness includes local filesystem and shell tools for teaching purposes. It is not a sandbox. Do not expose the built-in tools to untrusted users. See [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT - see [`LICENSE`](LICENSE).

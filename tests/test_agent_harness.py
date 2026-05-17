@@ -101,7 +101,7 @@ def test_agent_executes_tool_and_feeds_result_back() -> None:
                     "type": "tool_use",
                     "id": "tool_1",
                     "name": "read_file",
-                    "input": {"file_path": "README.md", "start_line": 1, "end_line": 1},
+                    "input": {"file_path": "README.md", "start_line": 5, "end_line": 5},
                 },
                 {"type": "message_stop"},
             ],
@@ -119,7 +119,7 @@ def test_agent_executes_tool_and_feeds_result_back() -> None:
     assert len(client.calls) == 2
     second_messages = client.calls[1]["messages"]
     assert second_messages[-1]["content"][0]["type"] == "tool_result"
-    assert "minimal-agent-harness" in second_messages[-1]["content"][0]["content"]
+    assert "Minimal Agent Harness" in second_messages[-1]["content"][0]["content"]
 
 
 def test_read_tool_supports_line_ranges(tmp_path: pathlib.Path) -> None:

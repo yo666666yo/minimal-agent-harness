@@ -1,0 +1,127 @@
+<svg width="1400" height="730" viewBox="0 0 1400 730" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Agent runtime flow</title>
+  <desc id="desc">A clean two-lane architecture diagram for the agent loop, model streaming path, tool execution lane, and loopback.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="730" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#09111F"/>
+      <stop offset="0.54" stop-color="#0B1020"/>
+      <stop offset="1" stop-color="#0A1725"/>
+    </linearGradient>
+    <linearGradient id="mainCard" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#162238"/>
+      <stop offset="1" stop-color="#0F1828"/>
+    </linearGradient>
+    <linearGradient id="toolCard" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#1B1A22"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-14%" y="-22%" width="128%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#020617" flood-opacity="0.30"/>
+    </filter>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <marker id="cyanArrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M1.5 1.2L8.8 5L1.5 8.8Z" fill="#80E4D6"/>
+    </marker>
+    <marker id="goldArrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M1.5 1.2L8.8 5L1.5 8.8Z" fill="#E8C766"/>
+    </marker>
+    <marker id="mutedArrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M1.5 1.2L8.8 5L1.5 8.8Z" fill="#7087A8"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="730" rx="34" fill="url(#bg)"/>
+  <circle cx="188" cy="132" r="138" fill="#1E7A66" opacity="0.32" filter="url(#glow)"/>
+  <circle cx="1170" cy="132" r="178" fill="#D6A84F" opacity="0.14" filter="url(#glow)"/>
+  <circle cx="1080" cy="640" r="236" fill="#2D4E82" opacity="0.20" filter="url(#glow)"/>
+  <path d="M0 612C152 564 283 634 461 595C645 554 712 473 892 507C1070 540 1193 618 1400 554V730H0V612Z" fill="#102238" opacity="0.74"/>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="76" y="72" fill="#F5F8FC" font-size="36" font-weight="750">Agent Runtime Flow</text>
+    <text x="76" y="104" fill="#A8B8CC" font-size="18">The async loop stays responsive while tool calls run in a controlled lane.</text>
+  </g>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="800" letter-spacing="2">
+    <text x="82" y="158" fill="#80E4D6">CONTROL LOOP</text>
+    <text x="82" y="420" fill="#E8C766">TOOL EXECUTION LANE</text>
+  </g>
+
+  <g opacity="0.78" stroke="#263954" stroke-width="1.4">
+    <path d="M76 178H1324"/>
+    <path d="M76 440H1324"/>
+  </g>
+
+  <!-- Cards -->
+  <g filter="url(#cardShadow)">
+    <rect x="76" y="216" width="230" height="116" rx="22" fill="url(#mainCard)" stroke="#304965" stroke-width="1.45"/>
+    <rect x="386" y="216" width="250" height="116" rx="22" fill="url(#mainCard)" stroke="#304965" stroke-width="1.45"/>
+    <rect x="716" y="216" width="250" height="116" rx="22" fill="url(#mainCard)" stroke="#304965" stroke-width="1.45"/>
+    <rect x="1046" y="216" width="278" height="116" rx="22" fill="url(#mainCard)" stroke="#304965" stroke-width="1.45"/>
+
+    <rect x="386" y="480" width="250" height="116" rx="22" fill="url(#toolCard)" stroke="#5E4B20" stroke-width="1.45"/>
+    <rect x="716" y="480" width="250" height="116" rx="22" fill="url(#toolCard)" stroke="#5E4B20" stroke-width="1.45"/>
+    <rect x="1046" y="480" width="278" height="116" rx="22" fill="url(#toolCard)" stroke="#5E4B20" stroke-width="1.45"/>
+  </g>
+
+  <!-- Card content -->
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="108" y="260" fill="#F5F8FC" font-size="21" font-weight="750">User input</text>
+    <text x="108" y="292" fill="#B5C4D7" font-size="15">Task enters the</text>
+    <text x="108" y="313" fill="#B5C4D7" font-size="15">agent runtime.</text>
+
+    <text x="418" y="260" fill="#F5F8FC" font-size="21" font-weight="750">AgentHarness.run()</text>
+    <text x="418" y="292" fill="#B5C4D7" font-size="15">Async generator</text>
+    <text x="418" y="313" fill="#B5C4D7" font-size="15">yields live progress.</text>
+
+    <text x="748" y="260" fill="#F5F8FC" font-size="21" font-weight="750">Context gate</text>
+    <text x="748" y="292" fill="#B5C4D7" font-size="15">Summarizes older</text>
+    <text x="748" y="313" fill="#B5C4D7" font-size="15">history when needed.</text>
+
+    <text x="1078" y="260" fill="#F5F8FC" font-size="21" font-weight="750">Model stream</text>
+    <text x="1078" y="292" fill="#B5C4D7" font-size="15">Emits text deltas</text>
+    <text x="1078" y="313" fill="#B5C4D7" font-size="15">and tool calls.</text>
+
+    <text x="418" y="524" fill="#F5F8FC" font-size="21" font-weight="750">Tool request</text>
+    <text x="418" y="556" fill="#CFBC83" font-size="15">Captured immediately</text>
+    <text x="418" y="577" fill="#CFBC83" font-size="15">from the stream.</text>
+
+    <text x="748" y="524" fill="#F5F8FC" font-size="21" font-weight="750">Executor</text>
+    <text x="748" y="556" fill="#CFBC83" font-size="15">Starts the tool while</text>
+    <text x="748" y="577" fill="#CFBC83" font-size="15">streaming continues.</text>
+
+    <text x="1078" y="524" fill="#F5F8FC" font-size="21" font-weight="750">Concurrency policy</text>
+    <text x="1078" y="556" fill="#E8C766" font-size="15" font-weight="700">Read tools run in parallel.</text>
+    <text x="1078" y="578" fill="#E8C766" font-size="15" font-weight="700">Write and shell tools lock.</text>
+  </g>
+
+  <!-- Flow lines -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M306 274H376" stroke="#80E4D6" stroke-width="2.6" marker-end="url(#cyanArrow)"/>
+    <path d="M636 274H706" stroke="#80E4D6" stroke-width="2.6" marker-end="url(#cyanArrow)"/>
+    <path d="M966 274H1036" stroke="#80E4D6" stroke-width="2.6" marker-end="url(#cyanArrow)"/>
+
+    <path d="M1185 332V374" stroke="#80E4D6" stroke-width="2.6" marker-end="url(#cyanArrow)"/>
+
+    <path d="M1185 332C1185 405 511 402 511 470" stroke="#E8C766" stroke-width="2.7" marker-end="url(#goldArrow)"/>
+    <path d="M636 538H706" stroke="#E8C766" stroke-width="2.7" marker-end="url(#goldArrow)"/>
+    <path d="M966 538H1036" stroke="#E8C766" stroke-width="2.7" marker-end="url(#goldArrow)"/>
+
+    <path d="M1185 596C1185 666 511 666 511 608" stroke="#7087A8" stroke-width="2.5" marker-end="url(#mutedArrow)"/>
+    <path d="M511 480V344" stroke="#7087A8" stroke-width="2.5" marker-end="url(#mutedArrow)"/>
+  </g>
+
+  <!-- Route labels -->
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="800">
+    <rect x="1120" y="378" width="130" height="30" rx="15" fill="#0F2230" stroke="#2B5960"/>
+    <text x="1154" y="398" fill="#80E4D6">text_delta</text>
+
+    <rect x="802" y="372" width="108" height="30" rx="15" fill="#241E12" stroke="#67521E"/>
+    <text x="831" y="392" fill="#E8C766">tool_use</text>
+
+    <rect x="442" y="640" width="138" height="30" rx="15" fill="#101827" stroke="#2C4260"/>
+    <text x="476" y="660" fill="#9EB1CC">loopback</text>
+  </g>
+</svg>

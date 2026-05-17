@@ -1,0 +1,25 @@
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="420" rx="36" fill="#0B1020"/>
+  <path d="M0 308C155 236 277 334 429 272C565 217 620 89 775 111C939 134 1002 290 1200 210V420H0V308Z" fill="#13213D"/>
+  <path d="M0 344C198 250 297 383 492 312C636 260 715 136 861 169C1012 203 1057 321 1200 279V420H0V344Z" fill="#153A48"/>
+  <circle cx="1004" cy="96" r="122" fill="#1E7A66" opacity="0.24"/>
+  <circle cx="195" cy="315" r="160" fill="#D6A84F" opacity="0.18"/>
+  <g filter="url(#shadow)">
+    <rect x="118" y="92" width="964" height="236" rx="22" fill="#101827" stroke="#2A3B55"/>
+    <rect x="148" y="122" width="904" height="176" rx="14" fill="#0D1422"/>
+    <path d="M188 171H322" stroke="#7DD3C7" stroke-width="10" stroke-linecap="round"/>
+    <path d="M188 213H421" stroke="#E5C16C" stroke-width="10" stroke-linecap="round"/>
+    <path d="M188 255H364" stroke="#8FA8C8" stroke-width="10" stroke-linecap="round"/>
+    <path d="M476 152H610" stroke="#567197" stroke-width="8" stroke-linecap="round"/>
+    <path d="M476 194H730" stroke="#7DD3C7" stroke-width="8" stroke-linecap="round"/>
+    <path d="M476 236H676" stroke="#E5C16C" stroke-width="8" stroke-linecap="round"/>
+    <path d="M797 150L874 194L797 238" stroke="#7DD3C7" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- <path d="M900 150L977 194L900 238" stroke="#E5C16C" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/> -->
+  </g>
+  <text x="600" y="382" fill="#F4F7FB" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" text-anchor="middle">Read the runtime behind coding agents.</text>
+  <defs>
+    <filter id="shadow" x="82" y="64" width="1036" height="308" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+</svg>
