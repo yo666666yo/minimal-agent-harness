@@ -25,7 +25,7 @@ It is intentionally small enough to read in one sitting, but complete enough to 
 
 ## What It Teaches
 
-**A real agent loop, not pseudocode.** `AgentHarness.run()` is an async generator that yields model text, tool calls, and tool results as they happen. It is the control surface a CLI, TUI, web UI, or IDE plugin can consume.
+**A real agent loop.** `AgentHarness.run()` is an async generator that yields model text, tool calls, and tool results as they happen. It is the control surface a CLI, TUI, web UI, or IDE plugin can consume.
 
 **Streaming tool execution.** Tool calls begin as soon as the provider stream emits them. The harness does not wait for the full model message before starting work.
 
