@@ -24,7 +24,13 @@ from typing import Any, AsyncGenerator
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agent_harness import APIClient, AgentConfig, AgentHarness, DEFAULT_SYSTEM_PROMPT  # noqa: E402
+from agent_harness import (  # noqa: E402
+    APIClient,
+    AgentConfig,
+    AgentHarness,
+    DEFAULT_SYSTEM_PROMPT,
+    render_event,
+)
 
 
 class OpenAIResponsesClient(APIClient):
@@ -160,7 +166,7 @@ async def main() -> None:
     )
 
     async for event in harness.run("Search for 'AgentHarness' in this repository"):
-        print(event)
+        print(render_event(event))
 
 
 if __name__ == "__main__":

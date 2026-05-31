@@ -17,7 +17,7 @@
 
 Most agent repos show you the product. This repo shows you the runtime.
 
-`minimal-agent-harness` is a compact, runnable reference implementation of the loop behind coding agents: stream model events, start tools while the model is still streaming, feed tool results back into the conversation, compact long context, and keep going until the task is done.
+`minimal-agent-harness` is a compact, runnable reference implementation of the loop behind coding agents: stream model events, start tools while the model is still streaming, gate risky tools behind approval, feed tool results back into the conversation, compact long context, and keep going until the task is done.
 
 It is intentionally small enough to read in one sitting, but complete enough to teach the control flow that production agent systems hide behind layers of framework code.
 
@@ -25,15 +25,19 @@ It is intentionally small enough to read in one sitting, but complete enough to 
 
 ## What It Teaches
 
-**A real agent loop.** `AgentHarness.run()` is an async generator that yields model text, tool calls, and tool results as they happen. It is the control surface a CLI, TUI, web UI, or IDE plugin can consume.
+**A real agent loop.** `AgentHarness.run()` is an async generator that emits structured `AgentEvent` objects for model deltas, tool calls, tool results, approval requests, compaction, aborts, and completion.
 
-**Streaming tool execution.** Tool calls begin as soon as the provider stream emits them. The harness does not wait for the full model message before starting work.
+**Runtime control flow.** Callers can send `AgentCommand` objects back into the generator with `asend()`, so a CLI, TUI, web UI, or IDE plugin can approve tools or abort the active run.
 
-**Safe concurrency.** Read-only tools can run in parallel. Shell and write tools are exclusive, so workspace-changing operations do not trample each other.
+**Streaming tool execution.** Tool calls begin as soon as the provider stream emits them. The harness does not wait for the full model message before starting safe work.
 
-**Context compaction.** Long histories are summarized into a compact prefix instead of being blindly truncated.
+**Safe concurrency.** Read-only tools can run in parallel. Workspace-changing tools are exclusive, so side effects do not trample each other.
 
-**Provider isolation.** Anthropic, OpenAI, mocks, or your own endpoint fit behind the same tiny `APIClient` event interface.
+**Approval and hooks.** `ToolPolicy` is the decision point before execution; hooks observe emitted events without owning policy decisions.
+
+**Session and context.** `AgentSession` preserves conversation history across user turns, and long histories are summarized into a compact prefix instead of being blindly truncated.
+
+**Provider isolation.** Anthropic, OpenAI, mocks, MCP adapters, or your own endpoint fit behind the same tiny `APIClient` event interface.
 
 ---
 
@@ -78,25 +82,28 @@ python agent_harness.py
 
 | Piece | File | Why it matters |
 |---|---|---|
-| Tool interface | `Tool` | Defines name, description, JSON schema, and async execution |
-| Provider adapter | `APIClient` | Normalizes model streams into `text_delta`, `tool_use`, and `message_stop` |
-| Mock model | `MockAPIClient` | Lets you run the harness without an API key |
-| Streaming executor | `StreamingToolExecutor` | Starts tools during model streaming |
-| Context compacting | `summarize_conversation()` | Preserves task state when history gets long |
-| Agent loop | `AgentHarness.run()` | The readable heart of the project |
+| `AgentEvent` / `render_event()` | `agent_harness.py` | Separates runtime events from display text |
+| `AgentCommand` | `agent_harness.py` | Lets the caller approve tools or abort a run with `asend()` |
+| `AgentSession` | `agent_harness.py` | Keeps conversation state across user turns |
+| `Tool` / `ToolContext` | `agent_harness.py` | Gives tools input, abort signal, workspace root, and session access |
+| `ToolCapabilities` | `agent_harness.py` | Describes read-only, concurrency, and approval behavior |
+| `ToolPolicy` | `agent_harness.py` | Gates model-requested tool execution |
+| `APIClient` | `agent_harness.py` | Normalizes provider streams into `text_delta`, `tool_use`, and `message_stop` |
+| `StreamingToolExecutor` | `agent_harness.py` | Starts approved tools during model streaming |
+| `summarize_conversation()` | `agent_harness.py` | Preserves task state when history gets long |
 
 ---
 
 ## Built-In Tools
 
-| Tool | Parallel? | Purpose |
-|---|---:|---|
-| `read_file` | Yes | Read full files or line ranges |
-| `grep` | Yes | Search Python files |
-| `write_file` | No | Write files with exclusive access |
-| `bash` | No | Run shell commands with a timeout |
+| Tool | Parallel? | Approval? | Purpose |
+|---|---:|---:|---|
+| `read_file` | Yes | No | Read workspace files or line ranges |
+| `grep` | Yes | No | Search Python files under the workspace |
+| `write_file` | No | Yes | Write workspace files |
+| `bash` | No | Yes | Run shell commands with `workspace_root` as cwd |
 
-The tools are deliberately simple. The value is the orchestration pattern.
+The built-in file tools are guarded by `workspace_root`. This is not a sandbox; shell commands still run on your machine.
 
 ---
 
@@ -105,14 +112,60 @@ The tools are deliberately simple. The value is the orchestration pattern.
 ```python
 import asyncio
 
-from agent_harness import AgentConfig, AgentHarness, MockAPIClient
+from agent_harness import AgentConfig, AgentHarness, MockAPIClient, render_event
 
 
 async def main():
     harness = AgentHarness(MockAPIClient(), AgentConfig(max_turns=5))
 
     async for event in harness.run("Search for 'StreamingToolExecutor'"):
-        print(event)
+        print(render_event(event))
+
+
+asyncio.run(main())
+```
+
+---
+
+## Approval Flow
+
+When a policy returns `request_approval`, the runtime yields an `approval_requested` event and pauses until the caller sends an `ApprovalResponse`.
+
+```python
+import asyncio
+
+from agent_harness import (
+    AgentConfig,
+    AgentHarness,
+    ApprovalResponse,
+    MockAPIClient,
+    RequireApprovalPolicy,
+    render_event,
+)
+
+
+async def main():
+    harness = AgentHarness(
+        MockAPIClient(),
+        AgentConfig(tool_policy=RequireApprovalPolicy()),
+    )
+    stream = harness.run("write a small file")
+
+    command = None
+    while True:
+        try:
+            if command is None:
+                event = await stream.__anext__()
+            else:
+                event = await stream.asend(command)
+                command = None
+        except StopAsyncIteration:
+            break
+
+        print(render_event(event))
+
+        if event.type == "approval_requested":
+            command = ApprovalResponse(event.data["request_id"], approved=False)
 
 
 asyncio.run(main())
@@ -123,7 +176,9 @@ asyncio.run(main())
 ## Extend It
 
 ```python
-from agent_harness import AgentConfig, DEFAULT_TOOLS, MockAPIClient, Tool, AgentHarness
+from typing import Any
+
+from agent_harness import Tool, ToolCapabilities, ToolContext
 
 
 class TicketLookupTool(Tool):
@@ -134,20 +189,19 @@ class TicketLookupTool(Tool):
         "properties": {"ticket_id": {"type": "string"}},
         "required": ["ticket_id"],
     }
-    is_concurrency_safe = True
+    capabilities = ToolCapabilities(read_only=True, concurrency_safe=True)
 
-    async def call(self, input, abort_signal):
+    async def call(self, input: dict[str, Any], context: ToolContext) -> str:
         return f"Ticket {input['ticket_id']}: example result"
-
-
-config = AgentConfig(tools=DEFAULT_TOOLS + [TicketLookupTool()])
-harness = AgentHarness(MockAPIClient(), config)
 ```
 
 Examples:
 
 - [`examples/custom_tool.py`](examples/custom_tool.py) - add a small domain tool.
 - [`examples/openai_client.py`](examples/openai_client.py) - adapt the harness to OpenAI's Responses API.
+- [`examples/approval_policy.py`](examples/approval_policy.py) - drive the bidirectional approval protocol.
+- [`examples/jsonl_transcript.py`](examples/jsonl_transcript.py) - write structured events to JSONL from a hook.
+- [`examples/mcp_adapter.py`](examples/mcp_adapter.py) - sketch how MCP tools fit behind the `Tool` interface.
 
 ---
 
@@ -156,7 +210,10 @@ Examples:
 ```text
 agent_harness.py              # the readable core runtime
 examples/
+  approval_policy.py          # bidirectional approval example
   custom_tool.py              # custom tool example
+  jsonl_transcript.py         # hook-based JSONL transcript example
+  mcp_adapter.py              # minimal MCP-to-Tool adapter sketch
   openai_client.py            # optional OpenAI provider adapter
 tests/
   test_agent_harness.py       # focused regression tests
@@ -170,7 +227,7 @@ tests/
 | Use case | Fit |
 |---|---|
 | Learn how coding-agent loops work | Excellent |
-| Teach streaming tool use and compaction | Excellent |
+| Teach event streams, approval, hooks, sessions, and compaction | Excellent |
 | Prototype a narrow custom agent runtime | Good |
 | Replace LangChain, AutoGen, or a production platform | Poor |
 | Run untrusted shell commands safely | Poor |
@@ -183,7 +240,7 @@ tests/
 - Better sandbox examples for shell and file tools.
 - A terminal recording for the README.
 - More precise token accounting.
-- Walkthrough docs for the executor, compacting, and provider adapter.
+- Walkthrough docs for the executor, compacting, provider adapter, and approval flow.
 
 ---
 
