@@ -119,6 +119,56 @@ def test_agent_returns_structured_text_events_without_tool_calls() -> None:
     assert any("Final response" in render_event(event) for event in events)
 
 
+def test_untraced_event_serialization_keeps_legacy_shape() -> None:
+    assert AgentEvent("custom", {"value": 1}).to_dict() == {
+        "type": "custom",
+        "data": {"value": 1},
+    }
+
+
+def test_trace_fields_reconstruct_one_rollout() -> None:
+    client = StaticClient(
+        [
+            {"type": "text_delta", "text": "done"},
+            {"type": "message_stop"},
+        ]
+    )
+    harness = AgentHarness(
+        client,
+        AgentConfig(tools=[], agent_id="planner"),
+    )
+
+    events = collect(
+        harness.run(
+            "finish the task",
+            trace_id="trace-1",
+            group_id="group-1",
+            rollout_id="rollout-1",
+            reward={"team": 1.0},
+            provenance={"prompt_id": "prompt-1"},
+        )
+    )
+    records = [event.to_trace_dict() for event in events]
+
+    assert records
+    assert {
+        (record["trace_id"], record["group_id"], record["rollout_id"])
+        for record in records
+    } == {("trace-1", "group-1", "rollout-1")}
+    assert {record["agent"] for record in records} == {"planner"}
+    assert any(
+        record["type"] == "model_delta"
+        and record["event_type"] == "message"
+        for record in records
+    )
+
+    terminal = next(record for record in records if record["type"] == "run_complete")
+    assert terminal["reward"] == {"team": 1.0}
+    assert terminal["provenance"]["prompt_id"] == "prompt-1"
+    assert terminal["provenance"]["runtime_event"] == "run_complete"
+    assert terminal["provenance"]["reward_source"] == "external"
+
+
 def test_agent_executes_tool_and_feeds_result_back() -> None:
     client = StaticClient(
         [
@@ -142,9 +192,25 @@ def test_agent_executes_tool_and_feeds_result_back() -> None:
         AgentConfig(max_turns=3, tools=[ReadTool()], workspace_root=ROOT),
     )
 
-    events = collect(harness.run("read README"))
+    events = collect(
+        harness.run(
+            "read README",
+            trace_id="trace-tool",
+            group_id="group-tool",
+            rollout_id="rollout-tool",
+        )
+    )
 
     assert any(event.type == "tool_call" and event.data["name"] == "read_file" for event in events)
+    trace_records = [event.to_trace_dict() for event in events]
+    assert any(
+        record["type"] == "tool_call" and record["tool"] == "read_file"
+        for record in trace_records
+    )
+    assert any(
+        record["type"] == "tool_result" and record["tool"] == "read_file"
+        for record in trace_records
+    )
     assert len(client.calls) == 2
     second_messages = client.calls[1]["messages"]
     assert second_messages[-1]["content"][0]["type"] == "tool_result"

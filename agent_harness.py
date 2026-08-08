@@ -55,10 +55,143 @@ class AgentEvent:
 
     type: str
     data: dict[str, Any] = field(default_factory=dict)
+    trace_id: str | None = None
+    group_id: str | None = None
+    rollout_id: str | None = None
+    event_type: str | None = None
+    agent: str | None = None
+    tool: str | None = None
+    reward: float | dict[str, float] | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly representation for hooks or transcripts."""
-        return {"type": self.type, "data": self.data}
+        record = {"type": self.type, "data": self.data}
+        if self.trace_id is not None:
+            record.update({
+                "trace_id": self.trace_id,
+                "group_id": self.group_id,
+                "rollout_id": self.rollout_id,
+                "event_type": self.event_type or self.type,
+                "agent": self.agent,
+                "tool": self.tool,
+                "reward": self.reward,
+                "provenance": dict(self.provenance),
+            })
+        return record
+
+    def to_trace_dict(self) -> dict[str, Any]:
+        """Return this event in the rollout trace shape."""
+        if self.trace_id is None:
+            raise ValueError("Event is not attached to a rollout trace")
+        return self.to_dict()
+
+
+TRACE_EVENT_TYPE_MAP = {
+    "run_started": "orchestrator_decision",
+    "turn_started": "orchestrator_decision",
+    "context_compacting": "orchestrator_decision",
+    "context_compacted": "orchestrator_decision",
+    "compaction_failed": "safety_event",
+    "model_start": "message",
+    "model_delta": "message",
+    "tool_call": "tool_call",
+    "approval_requested": "human_intervention",
+    "tool_result": "tool_result",
+    "run_complete": "return",
+    "turn_limit_reached": "return",
+    "run_aborted": "safety_event",
+}
+
+TRACE_EVENT_SOURCE_MAP = {
+    "model_start": "agent",
+    "model_delta": "agent",
+    "tool_call": "agent",
+    "tool_result": "tool",
+    "approval_requested": "human",
+    "run_complete": "agent",
+}
+
+
+def _new_trace_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def _require_identifier(value: str, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
+@dataclass
+class TraceContext:
+    """Minimal per-rollout identity and metadata for trace serialization."""
+
+    trace_id: str
+    group_id: str
+    rollout_id: str
+    agent: str = "agent"
+    reward: float | dict[str, float] | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.trace_id = _require_identifier(self.trace_id, "trace_id")
+        self.group_id = _require_identifier(self.group_id, "group_id")
+        self.rollout_id = _require_identifier(self.rollout_id, "rollout_id")
+        self.agent = _require_identifier(self.agent, "agent")
+        self.provenance = dict(self.provenance)
+
+    @classmethod
+    def for_run(
+        cls,
+        *,
+        trace_id: str | None,
+        group_id: str | None,
+        rollout_id: str | None,
+        agent: str,
+        reward: float | dict[str, float] | None,
+        provenance: dict[str, Any] | None,
+    ) -> "TraceContext":
+        resolved_trace_id = (
+            _new_trace_id("trace") if trace_id is None else trace_id
+        )
+        return cls(
+            trace_id=resolved_trace_id,
+            group_id=resolved_trace_id if group_id is None else group_id,
+            rollout_id=(
+                _new_trace_id("rollout")
+                if rollout_id is None
+                else rollout_id
+            ),
+            agent=agent,
+            reward=reward,
+            provenance=provenance or {},
+        )
+
+    def decorate(self, event: AgentEvent) -> None:
+        """Attach paper-aligned fields while retaining the runtime event name."""
+        event.trace_id = self.trace_id
+        event.group_id = self.group_id
+        event.rollout_id = self.rollout_id
+        event.event_type = TRACE_EVENT_TYPE_MAP.get(event.type, event.type)
+        event.agent = event.agent or self.agent
+        if event.reward is None and event.type in {
+            "run_complete",
+            "turn_limit_reached",
+            "run_aborted",
+        }:
+            event.reward = self.reward
+
+        event_provenance = dict(self.provenance)
+        event_provenance.setdefault("runtime_event", event.type)
+        event_provenance.setdefault(
+            "source",
+            TRACE_EVENT_SOURCE_MAP.get(event.type, "harness"),
+        )
+        if event.reward is not None:
+            event_provenance.setdefault("reward_source", "external")
+        event_provenance.update(event.provenance)
+        event.provenance = event_provenance
 
 
 @dataclass
@@ -911,6 +1044,7 @@ class AgentConfig:
     tools: list[Tool] = field(default_factory=lambda: DEFAULT_TOOLS.copy())
     tool_policy: ToolPolicy = field(default_factory=AutoAllowPolicy)
     hooks: list[Hook] = field(default_factory=list)
+    agent_id: str = "agent"
 
 
 class AgentHarness:
@@ -934,6 +1068,7 @@ class AgentHarness:
         self.session = session or AgentSession()
         self.workspace_root = pathlib.Path(self.config.workspace_root).resolve()
         self._active_abort_event: asyncio.Event | None = None
+        self._active_trace: TraceContext | None = None
 
     def abort(self) -> None:
         """Signal the active run to stop, if one is running."""
@@ -943,6 +1078,12 @@ class AgentHarness:
     async def run(
         self,
         user_message: str,
+        *,
+        trace_id: str | None = None,
+        group_id: str | None = None,
+        rollout_id: str | None = None,
+        reward: float | dict[str, float] | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> AsyncGenerator[AgentEvent, AgentCommand | None]:
         """
         Run the agent loop for one user message.
@@ -952,6 +1093,15 @@ class AgentHarness:
         """
         abort_event = asyncio.Event()
         self._active_abort_event = abort_event
+        trace = TraceContext.for_run(
+            trace_id=trace_id,
+            group_id=group_id,
+            rollout_id=rollout_id,
+            agent=self.config.agent_id,
+            reward=reward,
+            provenance=provenance,
+        )
+        self._active_trace = trace
         context = ToolContext(
             abort_signal=abort_event,
             workspace_root=self.workspace_root,
@@ -1080,6 +1230,7 @@ class AgentHarness:
                 assistant_text: list[str] = []
                 tool_use_blocks: list[ToolUseBlock] = []
                 all_tool_results: list[tuple[str, str, bool]] = []
+                tool_names_by_id: dict[str, str] = {}
                 streaming_executor = StreamingToolExecutor(self.config.tools, context)
 
                 async for event in self.api.stream_message(
@@ -1104,6 +1255,7 @@ class AgentHarness:
                             input=event["input"],
                         )
                         tool_use_blocks.append(block)
+                        tool_names_by_id[block.id] = block.name
                         command = yield await self._emit(
                             AgentEvent(
                                 "tool_call",
@@ -1112,6 +1264,7 @@ class AgentHarness:
                                     "name": block.name,
                                     "input": block.input,
                                 },
+                                tool=block.name,
                             )
                         )
                         _handle_command(command, abort_event)
@@ -1129,6 +1282,7 @@ class AgentHarness:
                                 block.id,
                                 denied_result,
                                 True,
+                                tool=block.name,
                             )
                             _handle_command(command, abort_event)
 
@@ -1144,6 +1298,7 @@ class AgentHarness:
                                         "input": block.input,
                                         "reason": policy_result.reason,
                                     },
+                                    tool=block.name,
                                 )
                             )
                             _handle_command(command, abort_event)
@@ -1186,6 +1341,7 @@ class AgentHarness:
                                     block.id,
                                     denied_result,
                                     True,
+                                    tool=block.name,
                                 )
                                 _handle_command(command, abort_event)
 
@@ -1200,6 +1356,7 @@ class AgentHarness:
                                 tid,
                                 content,
                                 is_error,
+                                tool=tool_names_by_id.get(tid),
                             )
                             _handle_command(command, abort_event)
 
@@ -1233,6 +1390,7 @@ class AgentHarness:
                         tid,
                         content,
                         is_error,
+                        tool=tool_names_by_id.get(tid),
                     )
                     _handle_command(command, abort_event)
 
@@ -1279,6 +1437,7 @@ class AgentHarness:
                     return
         finally:
             self._active_abort_event = None
+            self._active_trace = None
 
     async def _check_tool_policy(
         self,
@@ -1298,6 +1457,7 @@ class AgentHarness:
         tool_use_id: str,
         content: str,
         is_error: bool,
+        tool: str | None = None,
     ) -> AgentEvent:
         return await self._emit(
             AgentEvent(
@@ -1307,10 +1467,13 @@ class AgentHarness:
                     "content": content,
                     "is_error": is_error,
                 },
+                tool=tool,
             )
         )
 
     async def _emit(self, event: AgentEvent) -> AgentEvent:
+        if self._active_trace is not None:
+            self._active_trace.decorate(event)
         hook_errors = []
         for hook in self.config.hooks:
             try:

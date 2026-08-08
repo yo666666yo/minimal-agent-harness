@@ -91,6 +91,33 @@ python agent_harness.py
 | `APIClient` | `agent_harness.py` | Normalizes provider streams into `text_delta`, `tool_use`, and `message_stop` |
 | `StreamingToolExecutor` | `agent_harness.py` | Starts approved tools during model streaming |
 | `summarize_conversation()` | `agent_harness.py` | Preserves task state when history gets long |
+| `TraceContext` / `to_trace_dict()` | `agent_harness.py` | Adds the minimum rollout identity and provenance fields |
+
+## Minimal Rollout Trace
+
+The harness can emit a paper-aligned trace record for every runtime event while
+keeping the existing `type` and `data` fields. Pass stable identifiers for a
+rollout group and sample, plus any externally computed reward:
+
+```python
+async for event in harness.run(
+    "solve the task",
+    trace_id="trace-001",
+    group_id="task-001",
+    rollout_id="rollout-003",
+    reward={"team": 1.0},
+    provenance={"prompt_id": "prompt-001", "model": "frozen-model"},
+):
+    record = event.to_trace_dict()
+```
+
+Each traced record contains `trace_id`, `group_id`, `rollout_id`,
+`event_type`, `agent`, `tool`, `reward`, and `provenance`. `event_type` maps
+runtime events to the paper's event vocabulary (`model_delta` to `message`,
+`run_complete` to `return`, and so on); the original runtime name remains in
+`type` and `provenance.runtime_event`. Tool calls and results carry the tool
+name. The supplied reward is written to the terminal event only, because the
+harness does not infer evaluation outcomes.
 
 ---
 
