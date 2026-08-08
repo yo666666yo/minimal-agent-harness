@@ -217,8 +217,19 @@ examples/
   openai_client.py            # optional OpenAI provider adapter
 tests/
   test_agent_harness.py       # focused regression tests
+  test_minimal_mas.py         # two-agent environment and credit smoke tests
 .github/workflows/ci.yml      # pytest + ruff
 ```
+
+## Minimal Two-Agent Experiment
+
+The `experiments/` package contains a synthetic coordinator/researcher task with parallel reads, serialized writes, and a held-out comparison of single-agent, naive GRPO, and CAD-GRPO. It is intentionally model-free: use it to validate the rollout schema, scheduler, cost counters, and credit/oracle metric before connecting a provider.
+
+```powershell
+python -m experiments.minimal_mas --train-groups 24 --group-size 8 --eval-rollouts 128
+```
+
+See [`experiments/README.md`](experiments/README.md) for the metric contract and limitations.
 
 ---
 
